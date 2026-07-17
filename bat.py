@@ -11,7 +11,7 @@ time.tzset()
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-TOKEN = "8836587774:AAPFGxIDp0M86eBfzu4Fyxv5dn8SLPE8yj8"
+TOKEN = "8836587774:AAFPGxIDp0M86eBfzu4Fyxv5dn8SLPE8yj8"
 
 # ========== 用户状态 ==========
 user_contexts = {}
@@ -58,7 +58,7 @@ HEALTH_REMINDERS = [
     "💺 调整坐姿，双脚平放，腰背挺直！"
 ]
 
-# ========== 故事库 ==========
+# ========== 故事库（7天×24个=168个故事） ==========
 WEEK_STORIES = {
     0: [
         {"title": "🌅 第一缕阳光", "content": "清晨第一缕阳光穿过窗帘，轻轻落在枕头上。它说：'早安，今天是新的开始。' 你睁开眼，发现世界还在，你还在，这就够了。"},
@@ -427,10 +427,10 @@ async def auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ========== 主程序 ==========
 def main():
     application = Application.builder().token(TOKEN).build()
-    
+
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply))
-    
+
     job_queue = application.job_queue
     if job_queue:
         job_queue.run_repeating(send_health_reminder, interval=3600, first=10)
@@ -438,13 +438,14 @@ def main():
         print("   🕐 每小时发送一次（24小时）")
         print("   📚 连续7天 × 24个故事 = 168个故事")
         print("   💪 每天不重复，每小时不重复")
-    
- PORT = int(os.environ.get('PORT', 10000))
+
+    # ===== Webhook 模式（必须监听端口） =====
+    PORT = int(os.environ.get('PORT', 10000))
     application.run_webhook(
         listen='0.0.0.0',
         port=PORT,
         url_path=TOKEN,
-        webhook_url=f'https://telegram-bot555-0czy.onrender.com/{TOKEN}'
+        webhook_url=f'https://telegram-bot111111.onrender.com/{TOKEN}'
     )
 
 if __name__ == "__main__":
