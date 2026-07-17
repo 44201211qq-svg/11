@@ -1,17 +1,17 @@
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 import random
 import asyncio
 
-# ===== 设置时区为北京时间 =====
+# ===== 设置时区 =====
 os.environ['TZ'] = 'Asia/Shanghai'
 time.tzset()
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-TOKEN = "8836587774:AAFPGxIDp0M86eBfzu4Fyxv5dn8SLPE8yj8"
+TOKEN = "8836587774:AAPFGxIDp0M86eBfzu4Fyxv5dn8SLPE8yj8"
 
 # ========== 用户状态 ==========
 user_contexts = {}
@@ -24,11 +24,12 @@ def get_user_context(user_id):
             'mood': 'neutral',
             'chat_count': 0,
             'last_message': None,
-            'used_stories': [],      # 今天已用的故事索引
-            'last_story_date': None, # 上次发故事的日期
-            'used_reminders': [],    # 已用的提醒
+            'used_stories': [],
+            'last_story_date': None,
+            'used_reminders': [],
             'last_reminder_index': -1,
-            'story_day_index': 0     # 当前第几天
+            'story_day_index': 0,
+            'start_date': None
         }
     return user_contexts[user_id]
 
@@ -57,9 +58,8 @@ HEALTH_REMINDERS = [
     "💺 调整坐姿，双脚平放，腰背挺直！"
 ]
 
-# ========== 连续7天 × 每天24个故事 = 168个故事 ==========
+# ========== 故事库 ==========
 WEEK_STORIES = {
-    # ===== 第1天：温情暖心 =====
     0: [
         {"title": "🌅 第一缕阳光", "content": "清晨第一缕阳光穿过窗帘，轻轻落在枕头上。它说：'早安，今天是新的开始。' 你睁开眼，发现世界还在，你还在，这就够了。"},
         {"title": "☕ 一杯咖啡的温度", "content": "冬天的早晨，有人为你煮了一杯热咖啡。你捧在手里，温度从手心传到心里。'谢谢。' 你说。'不客气，我想看到你笑。' 他回答。"},
@@ -86,8 +86,6 @@ WEEK_STORIES = {
         {"title": "🌙 睡前的晚安", "content": "睡前收到一条消息：'晚安，好梦。' 你回复：'你也是。' 最简单的晚安，却是最深的牵挂。因为有人记得和你说晚安。"},
         {"title": "💕 明天的约定", "content": "睡前你们约定：'明天醒来第一个发消息的人，要给对方一个惊喜。' 第二天你醒来，看到他的消息：'我梦到你了。' 你的惊喜是：'我也是。'"}
     ],
-    
-    # ===== 第2天：治愈成长 =====
     1: [
         {"title": "🌱 种子的力量", "content": "一颗种子在石缝里发芽，没有泥土也没有水，但它还是努力向上。三个月后它开出了一朵花。路过的人说：'这朵花真坚强。' 你也能像它一样，在困难中绽放。"},
         {"title": "🦋 破茧的勇气", "content": "毛虫变成蝴蝶需要经历痛苦，但当你张开翅膀的那一刻，你会发现一切都值得。你也在蜕变，别怕痛，你会飞起来的。"},
@@ -114,8 +112,6 @@ WEEK_STORIES = {
         {"title": "🌟 你本来就是星星", "content": "你抬头看星星，觉得它们很亮。但你忘了，你也是星星，只是你一直在低头看地面。抬起头，你就会发光。"},
         {"title": "💕 明天的自己", "content": "明天的你会感谢今天没放弃的自己。不管今天多难，坚持下去，明天的你会更强大。晚安，勇敢的人。"}
     ],
-    
-    # ===== 第3天：爱情浪漫 =====
     2: [
         {"title": "🌹 窗台上的玫瑰", "content": "花店老板每天留一枝玫瑰放在窗台上。十年前有个女孩说：'如果我迷路了，看到窗台上的玫瑰就知道这是回家的路。' 十年后她回来了，看到玫瑰说：'我一直在找这朵花。'"}, 
         {"title": "💌 第1000封情书", "content": "男孩写了999封情书都没寄出去。第1000封他寄了，女孩回信：'我收到了前999封，我在等你寄第1000封。' 原来她一直在等他勇敢。"},
@@ -142,8 +138,6 @@ WEEK_STORIES = {
         {"title": "🌙 永远有多远", "content": "她问他：'永远有多远？' 他说：'从今天到最后一秒，再远一点。' 她说：'那我们一起走到永远。' 他点头：'好。'"},
         {"title": "💕 两个人的星空", "content": "他们躺在草地上看星星，她指着两颗靠得很近的星星说：'那两颗好像我们。' 他说：'不，我们比它们更近。' 他握紧了她的手。'对，我们更近。'"}
     ],
-    
-    # ===== 第4天：友情岁月 =====
     3: [
         {"title": "☕ 十年咖啡之约", "content": "两个朋友约定每周三下午三点，在同一家咖啡馆见面，风雨无阻，坚持了十年。后来一人出国了，另一个人还是每周去，点两杯咖啡。两年后他回来了，发现他的那杯咖啡还是热的。"}, 
         {"title": "🐱 流浪猫的报恩", "content": "女孩每天给楼下的流浪猫带吃的。有一天猫不见了，她找了一个月。一个月后猫回来了，嘴里叼着一朵小花放在她门口。原来猫用它的方式说了声谢谢。"},
@@ -170,8 +164,6 @@ WEEK_STORIES = {
         {"title": "🌅 再见的约定", "content": "毕业时他们说：'十年后见。' 十年后他们都来了，带着各自的人生故事。'你没变。' '你也是。' 最好的再见，是还能再相见。"},
         {"title": "💕 朋友一生一起走", "content": "一句话，一辈子，一生情，一杯酒。朋友就是，你不需要解释，他就懂。你不需要说明，他就在。感谢每一个陪你走过风雨的人。晚安，朋友。"}
     ],
-    
-    # ===== 第5天：人生感悟 =====
     4: [
         {"title": "🌅 每一天都是礼物", "content": "你醒来，阳光照进房间。你以为是理所当然的，但其实每一天都是礼物。有人在昨天离开了这个世界，而你还在这里。好好珍惜今天的每一个瞬间。"},
         {"title": "🌊 时间的河流", "content": "时间像河流，不会倒流。你站在岸上，看水流过。你不能停留，也不能回头。但你可以选择，让水流过的每一刻都是美好的。"},
@@ -198,8 +190,6 @@ WEEK_STORIES = {
         {"title": "🌙 睡前的反思", "content": "今天有遗憾吗？有遗憾也没关系，因为明天你可以做得更好。今天有快乐吗？记住那些快乐，它们是你生活的燃料。晚安，今天已经结束了，明天会更好。"},
         {"title": "💖 做最好的自己", "content": "你不用成为别人，你只需要成为最好的自己。每个人都独一无二，你也是。别人的路是别人的，你的路只有你能走。走自己的路，让别人说去吧。晚安。"}
     ],
-    
-    # ===== 第6天：希望梦想 =====
     5: [
         {"title": "🌟 你也是星星", "content": "你抬头看星星，觉得很美。但你忘了，你也是一颗星星。只是你一直在看别人发光，忘了自己也会发光。从现在开始，照亮自己的路吧。"},
         {"title": "🎈 飘向远方的梦", "content": "你放了一个气球，带着你的梦想。它飞过了高山、大海，飞到了很远的地方。你没看到它去了哪，但你相信，它会到达。梦想也是，你信它就会到。"},
@@ -226,8 +216,6 @@ WEEK_STORIES = {
         {"title": "🌙 入睡前", "content": "今天你做得很好。也许不够完美，但你已经尽力了。明天继续努力，你会越来越好的。晚安，追梦的人。"},
         {"title": "💕 相信自己", "content": "世界上相信你的人不多，但你一定要相信你自己。就算全世界都质疑你，你也要对自己说：'我可以。' 你比你想象的更强大。"}
     ],
-    
-    # ===== 第7天：幸福感恩 =====
     6: [
         {"title": "🙏 清晨的感恩", "content": "早上醒来，你呼吸了一口新鲜空气。你知道吗？世界上有一些人再也醒不来了。你今天还能睁眼看到阳光，本身就是一件值得感恩的事。"},
         {"title": "☕ 一杯茶的温度", "content": "有人为你泡了一杯茶，温度刚好。你喝了一口，心里暖暖的。'谢谢。' 你说。'不客气，能看到你开心我就开心了。' 幸福，就是一杯茶的温度。"},
@@ -256,78 +244,61 @@ WEEK_STORIES = {
     ]
 }
 
-# ========== 获取健康提醒 ==========
+# ========== 获取提醒 ==========
 def get_health_reminder(user_id):
     context = get_user_context(user_id)
     used = context.get('used_reminders', [])
     all_reminders = HEALTH_REMINDERS.copy()
-    
     if len(used) >= len(all_reminders):
         context['used_reminders'] = []
         used = []
-    
     available = [i for i in range(len(all_reminders)) if i not in used]
     if not available:
         context['used_reminders'] = []
         available = list(range(len(all_reminders)))
-    
     chosen = random.choice(available)
     context['used_reminders'].append(chosen)
     return all_reminders[chosen]
 
-# ========== 获取当前小时的故事（连续7天不重复） ==========
+# ========== 获取故事 ==========
 def get_hourly_story(user_id):
-    """获取当前小时对应的故事，连续7天×24小时不重复"""
     now = datetime.now()
     hour = now.hour
     today = now.date()
     context = get_user_context(user_id)
     
-    # 计算今天是第几天（从第一次使用开始算）
     if context.get('start_date') is None:
         context['start_date'] = today
         context['day_index'] = 0
     
-    # 如果日期变了，更新天数
     if today != context.get('last_story_date'):
-        # 新的一天
-        days_diff = (today - context['last_story_date']).days if context.get('last_story_date') else 0
-        if days_diff >= 1:
-            # 更新天数索引
-            context['day_index'] = (context.get('day_index', 0) + 1) % 7
-            context['used_stories'] = []  # 重置今天的已用列表
+        if context.get('last_story_date'):
+            days_diff = (today - context['last_story_date']).days
+            if days_diff >= 1:
+                context['day_index'] = (context.get('day_index', 0) + 1) % 7
+                context['used_stories'] = []
         context['last_story_date'] = today
     
     day_index = context.get('day_index', 0)
     day_stories = WEEK_STORIES[day_index]
-    
-    # 获取今天已用的故事索引
     used = context.get('used_stories', [])
     
-    # 如果今天的故事已经用完（24个都用过了），重置
     if len(used) >= len(day_stories):
         context['used_stories'] = []
         used = []
-        # 自动进入下一天
         context['day_index'] = (day_index + 1) % 7
         day_index = context['day_index']
         day_stories = WEEK_STORIES[day_index]
     
-    # 获取当前小时对应的故事
     story = day_stories[hour]
-    
-    # 记录已用
     if hour not in used:
         context['used_stories'].append(hour)
     
-    # 返回故事，附带天数和主题信息
     day_names = ["第一天", "第二天", "第三天", "第四天", "第五天", "第六天", "第七天"]
     themes = ["温情暖心", "治愈成长", "爱情浪漫", "友情岁月", "人生感悟", "希望梦想", "幸福感恩"]
-    
     story['day_name'] = day_names[day_index]
     story['theme'] = themes[day_index]
     story['day_index'] = day_index
-    
     return story
 
 # ========== 定时发送 ==========
@@ -335,8 +306,6 @@ async def send_health_reminder(context: ContextTypes.DEFAULT_TYPE):
     now = datetime.now()
     hour = now.hour
     
-    # 全天24小时发送
-    # 根据小时调整问候语
     if 5 <= hour < 8:
         greeting = "🌅 早安！新的一天开始了！"
     elif 8 <= hour < 12:
@@ -354,9 +323,7 @@ async def send_health_reminder(context: ContextTypes.DEFAULT_TYPE):
         try:
             story = get_hourly_story(user_id)
             reminder = get_health_reminder(user_id)
-            
             day_info = f"📅 第{story['day_index']+1}天 · {story['theme']}"
-            
             message = f"""🕐 **{now.strftime('%H:%M')}**
 
 {greeting}
@@ -372,14 +339,8 @@ async def send_health_reminder(context: ContextTypes.DEFAULT_TYPE):
 
 ---
 {day_info}
-💕 连续7天，每天24个故事，祝你今天被温暖包围！
-"""
-            
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=message,
-                parse_mode='Markdown'
-            )
+💕 连续7天，每天24个故事，祝你今天被温暖包围！"""
+            await context.bot.send_message(chat_id=user_id, text=message, parse_mode='Markdown')
             print(f"✅ 已发送 [第{story['day_index']+1}天 {hour}点] 给 {user_id}")
         except Exception as e:
             print(f"❌ 发送失败: {e}")
@@ -388,28 +349,20 @@ async def send_health_reminder(context: ContextTypes.DEFAULT_TYPE):
 def get_intelligent_reply(text, user_id):
     text_lower = text.lower()
     context = get_user_context(user_id)
-    context['chat_count'] += 1
+    context['chat_count'] = context.get('chat_count', 0) + 1
     
-    # 问候
     if any(word in text_lower for word in ['早安', '早上好', '早呀']):
         return random.choice(['早安！🌅 今天也要元气满满哦！', '早呀！昨晚睡得好吗？💪', '早上好！新的一天开始了✨'])
-    
     elif any(word in text_lower for word in ['晚安', '晚呀', '睡了']):
         return random.choice(['晚安！🌙 好梦哦~', '晚安~ 今天辛苦了😴', '睡吧睡吧，明天见💕'])
-    
-    # 讲故事
     elif any(word in text_lower for word in ['故事', '听故事', '讲个故事']):
         story = get_hourly_story(user_id)
         return f"📖 **{story['title']}**\n\n{story['content']}\n\n---\n📅 第{story['day_index']+1}天 · {story['theme']}"
-    
-    # 今天第几天
     elif any(word in text_lower for word in ['第几天', '今天第几天']):
         day_index = context.get('day_index', 0)
         day_names = ["第一天", "第二天", "第三天", "第四天", "第五天", "第六天", "第七天"]
         themes = ["温情暖心", "治愈成长", "爱情浪漫", "友情岁月", "人生感悟", "希望梦想", "幸福感恩"]
         return f"📅 今天是 {day_names[day_index]}\n📖 今日主题：{themes[day_index]}"
-    
-    # 开关提醒
     elif '关闭提醒' in text_lower:
         if user_id in USER_IDS:
             USER_IDS.remove(user_id)
@@ -418,8 +371,6 @@ def get_intelligent_reply(text, user_id):
         if user_id not in USER_IDS:
             USER_IDS.append(user_id)
             return '✅ 已开启定时提醒'
-    
-    # 默认
     else:
         replies = ['嗯嗯，我听着呢！👂', '今天有什么有趣的事吗？😊', '和你聊天挺开心的！', '然后呢？继续说~']
         return random.choice(replies)
@@ -427,7 +378,6 @@ def get_intelligent_reply(text, user_id):
 # ========== 命令 ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
     if user_id not in USER_IDS:
         USER_IDS.append(user_id)
         print(f"✅ 用户 {user_id} 已加入")
@@ -458,11 +408,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
     await update.message.reply_text(welcome)
 
-# ========== 自动回复 ==========
 async def auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_msg = update.message.text
-    
     if '关闭提醒' in user_msg:
         if user_id in USER_IDS:
             USER_IDS.remove(user_id)
@@ -473,43 +421,30 @@ async def auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
             USER_IDS.append(user_id)
             await update.message.reply_text("✅ 已开启定时提醒")
             return
-    
     reply = get_intelligent_reply(user_msg, user_id)
     await update.message.reply_text(reply)
 
 # ========== 主程序 ==========
 def main():
-    app = Application.builder().token(TOKEN).build()
+    application = Application.builder().token(TOKEN).build()
     
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply))
     
-    job_queue = app.job_queue
+    job_queue = application.job_queue
     if job_queue:
-        job_queue.run_repeating(
-            send_health_reminder,
-            interval=3600,
-            first=10
-        )
-        print("=" * 50)
+        job_queue.run_repeating(send_health_reminder, interval=3600, first=10)
         print("📖 故事机器人已启动！")
         print("   🕐 每小时发送一次（24小时）")
         print("   📚 连续7天 × 24个故事 = 168个故事")
         print("   💪 每天不重复，每小时不重复")
-        print("=" * 50)
     
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
-    
-    # ===== 使用 Webhook 模式（适配 Render） =====
-    PORT = int(os.environ.get('PORT', 10000))
+ PORT = int(os.environ.get('PORT', 10000))
     application.run_webhook(
         listen='0.0.0.0',
         port=PORT,
         url_path=TOKEN,
-        webhook_url=f'https://telegram-bot2-p8yq.onrender.com/{TOKEN}'
+        webhook_url=f'https://telegram-bot555-0czy.onrender.com/{TOKEN}'
     )
 
 if __name__ == "__main__":
